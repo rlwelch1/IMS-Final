@@ -108,4 +108,6 @@ class MainWidget2(BaseWidget) :
 
 
 # pass in which MainWidget to run as a command-line arg
-run(eval('MainWidget' + sys.argv[1]))
+#run(eval('MainWidget' + sys.argv[1]))
+run(eval('MainWidget' + '1'))
+
