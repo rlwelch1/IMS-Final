@@ -5,6 +5,12 @@ class Arpeggiator(object):
     def __init__(self, sched, synth, channel=0, patch=(0, 40), callback = None):
         super(Arpeggiator, self).__init__()
         
+        self.sched = sched
+        self.synth = synth
+        self.channel = channel
+        self.patch = patch
+        self.callback = callback
+        
         self.notes = []
         self.is_playing = False
         self.note_grid = 480
@@ -14,6 +20,7 @@ class Arpeggiator(object):
     # start the arpeggiator
     def start(self):
         self.is_playing = True
+        self.play()
     
     # stop the arpeggiator
     def stop(self):
@@ -33,3 +40,7 @@ class Arpeggiator(object):
     # dir is either 'up', 'down', or 'updown'
     def set_direction(self, direction):
         self.direction = direction 
+
+    def play(self):
+        if len(self.notes) == 0 or self.direction == '':
+            raise Exception('Must set the notes and direction before playing')
