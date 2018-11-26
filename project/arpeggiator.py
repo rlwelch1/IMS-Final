@@ -3,7 +3,8 @@ from common.clock import kTicksPerQuarter, quantize_tick_up
 
 
 class Arpeggiator(object):
-    def __init__(self, sched, synth, channel=0, patch=(0, 40), callback = None):
+    def __init__(self, sched, synth, channel=0,
+            patch=(0, 40), callback = None):
         super(Arpeggiator, self).__init__()
         self.sched = sched
         self.synth = synth

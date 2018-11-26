@@ -9,65 +9,6 @@ from common.clock import *
 from common.metro import *
 from arpeggiator import *
 
-# part 1: create Arpeggiator (in pset4_arpeg.py) and test it here
-class MainWidget1(BaseWidget) :
-    def __init__(self):
-        super(MainWidget1, self).__init__()
-
-        self.audio = Audio(2)
-        self.synth = Synth('../data/FluidR3_GM.sf2')
-
-        # create TempoMap, AudioScheduler
-        self.tempo_map  = SimpleTempoMap(120)
-        self.sched = AudioScheduler(self.tempo_map)
-
-        # connect scheduler into audio system
-        self.audio.set_generator(self.sched)
-        self.sched.set_generator(self.synth)
-
-        # create the metronome:
-        self.metro = Metronome(self.sched, self.synth)
-
-        # create the arpeggiator:
-        self.arpeg = Arpeggiator(self.sched, self.synth, channel = 1, patch = (0,0) )
-
-        # and text to display our status
-        self.label = topleft_label()
-        self.add_widget(self.label)
-
-    def on_key_down(self, keycode, modifiers):
-        if keycode[1] == 'm':
-            self.metro.toggle()
-
-        if keycode[1] == 'a':
-            self.arpeg.start()
-
-        notes = lookup(keycode[1], 'qwe', ((60, 64, 67, 72), (55, 59, 62, 65, 67, 71), (60, 65, 69)))
-        if notes:
-            self.arpeg.set_notes(notes)
-
-        rhythm = lookup(keycode[1], 'uiop', ((120, 1), (160, 1), (240, 0.75), (480, 0.25)))
-        if rhythm:
-            self.arpeg.set_rhythm(*rhythm)
-
-        direction = lookup(keycode[1], '123', ('up', 'down', 'updown'))
-        if direction:
-            self.arpeg.set_direction(direction)
-
-    def on_key_up(self, keycode):
-        if keycode[1] == 'a':
-            self.arpeg.stop()
-
-    def on_update(self) :
-        self.audio.on_update()
-        self.label.text = self.sched.now_str() + '\n'
-        self.label.text += 'tempo:%d\n' % self.tempo_map.get_tempo()
-        self.label.text += 'm: toggle Metronome\n'
-        self.label.text += 'a: Enable Arpeggiator\n'
-        self.label.text += 'q w e: Changes notes\n'
-        self.label.text += 'u i o p: Change Rhythm\n'
-        self.label.text += '1 2 3: Change Direction\n'
-
 C7 = [60, 64, 67, 70]
 C7MAJ = [60, 64, 67, 71]
 C7MIN = [60, 63, 67, 70]
@@ -152,10 +93,9 @@ class Bubble(InstructionGroup):
         self.circle.cpos = pos
         return pos[1] > 0
 
-# Part 2, 3, and 4
-class MainWidget2(BaseWidget) :
+class MainWidget(BaseWidget) :
     def __init__(self):
-        super(MainWidget2, self).__init__()
+        super(MainWidget, self).__init__()
         # Graphics
         self.objects = AnimGroup()
         self.canvas.add(self.objects)
@@ -252,4 +192,42 @@ class MainWidget2(BaseWidget) :
             self.bass.set_direction(direction)
 
 # pass in which MainWidget to run as a command-line arg
-run(eval('MainWidget' + sys.argv[1]))
+run(eval('MainWidget'))
+
+def embellish(note):
+    return (note, note-2, note)
+
+
+MIDDLE_C_MIDI = 60
+MIDDLE_C = (4, 0)
+MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11]
+MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10]
+BEBOP_SCALE = [0, 2, 4, 5, 7, 9, 10, 11]
+_7 = [0, 4, 7, 10]
+_MAJ7 = [0, 4, 7, 11]
+_MIN7 = [0, 3, 7, 10]
+
+class Chord(object):
+    def __init__(self, base, offsets):
+        super(Chord, self).__init__()
+        self.base = base
+        self.offsets = offsets
+
+    def sample_note(self, nearest):
+        return self.base + random.choice(self.offsets)
+
+class Key(object):
+    def __init__(self, base):
+        super(Key, self).__init__()
+        self.base = base
+
+
+class Phrase(object):
+    def __init__(self, key, start, chords):
+        super(Phrase, self).__init__()
+        self.key = key
+        self.chords = chords
+
+        self.melody = []
+        for chord in self.chords:
+            self.melody.append(chord.sample_midi())
