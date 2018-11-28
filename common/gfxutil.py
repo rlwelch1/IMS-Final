@@ -11,7 +11,7 @@
 
 from kivy.clock import Clock as kivyClock
 from kivy.graphics.instructions import InstructionGroup
-from kivy.graphics import Rectangle, Ellipse, Color, Fbo, ClearBuffers, ClearColor, Line, Triangle
+from kivy.graphics import Rectangle, Ellipse, Color, Fbo, ClearBuffers, ClearColor, Line
 from kivy.graphics import PushMatrix, PopMatrix, Scale, Callback
 from kivy.graphics.texture import Texture
 from kivy.uix.label import Label
@@ -57,6 +57,37 @@ class CEllipse(Ellipse):
     cpos = property(get_cpos, set_cpos)
     csize = property(get_csize, set_csize)
 
+class Triangle(CEllipse):
+    def __init__(self, **kwargs):
+        super(Triangle, self).__init__(
+                **kwargs, segments=3, angle_start=90, angle_end=450)
+
+
+class CRectangle(Rectangle):
+    def __init__(self, **kwargs):
+        super(CRectangle, self).__init__(**kwargs)
+        if 'cpos' in kwargs:
+            self.cpos = kwargs['cpos']
+
+        if 'csize' in kwargs:
+            self.csize = kwargs['csize']
+
+    def get_cpos(self):
+        return (self.pos[0] + self.size[0]/2, self.pos[1] + self.size[1]/2)
+
+    def set_cpos(self, p):
+        self.pos = (p[0] - self.size[0]/2 , p[1] - self.size[1]/2)
+
+    def get_csize(self) :
+        return self.size
+
+    def set_csize(self, p) :
+        cpos = self.get_cpos()
+        self.size = p
+        self.set_cpos(cpos)
+
+    cpos = property(get_cpos, set_cpos)
+    csize = property(get_csize, set_csize)
 
 
 # KeyFrame Animation class
