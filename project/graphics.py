@@ -14,7 +14,7 @@ from noise import pnoise1
 
 class GemDisplay(InstructionGroup):
     BORDER = np.array((1., 1.))
-    def __init__(self, hit_time, pos, msize, lifetime):
+    def __init__(self, spawn_time, hit_time, pos, msize, anticipate_time):
         super(GemDisplay, self).__init__()
         self.pos = pos
         self.msize = np.array((msize, msize))
@@ -38,18 +38,20 @@ class GemDisplay(InstructionGroup):
 
         self.add(PopMatrix())
 
+        print(spawn_time)
+        print(hit_time)
         self.anim = KFAnim(
-            # time,                  radius, b_alpha, m_alpha, 
-            (0,                      self.bsize[0], 0., 0.),
-            (hit_time-lifetime-0.01, self.bsize[0], 0.0, 0.),
-            (hit_time-lifetime,      self.bsize[0], 0.3, 1.),
-            (hit_time-0.01,          self.msize[0], 0.3, 1.),
-            (hit_time,               self.msize[0], 1, 1.),
-            (hit_time+0.5,           self.msize[0], 1., 1.)
+            # time,                         radius,        b_alpha, m_alpha, 
+            (spawn_time,                    self.bsize[0], 1., 1.),
+            (hit_time-anticipate_time-0.01, self.bsize[0], 0.0, 0.),
+            (hit_time-anticipate_time,      self.bsize[0], 0.3, 1.),
+            (hit_time-0.01,                 self.msize[0], 0.3, 1.),
+            (hit_time,                      self.msize[0], 1, 1.),
+            (hit_time+0.5,                  self.msize[0], 1., 1.)
         )
         self.hit_time = hit_time
 
-        self.time = 0
+        self.time = spawn_time
         self.on_update(self.time)
 
     def on_hit(self):
@@ -96,6 +98,7 @@ class PlayerDisplay(InstructionGroup):
 
         self.addons = list()
 
+        self.pos = np.array((Window.width/2, Window.height/2))
         self.time = 0
         self.on_update(0)
 
@@ -121,8 +124,7 @@ class PlayerDisplay(InstructionGroup):
             addon.on_update(dt)
 
         # update velocity
-        self.vel_target = self.dir * self.lvel[1] + \
-                          tangent(self.dir) * self.lvel[0]
+        self.vel_target = self.lvel
         self.vel += (self.vel_target - self.vel) * 0.999 * dt 
         # update possition
         self.pos = np.clip(self.pos+self.vel*dt, self.size/2,
@@ -165,7 +167,10 @@ class Camera(InstructionGroup):
 
         shake = self.trauma**3
 
-        seed = [((self.seed[i]+self.time)%1024)*self.NOISE_MULT for i in range(3)]
+        seed = [
+                ((self.seed[i]+self.time)%1024)*self.NOISE_MULT
+                for i in range(3)
+        ]
 
         self.angle.angle = self.MAX_ANGLE * shake * pnoise1(seed[0])
         self.offset.x = self.MAX_OFFSET * shake * pnoise1(seed[1])

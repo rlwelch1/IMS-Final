@@ -14,6 +14,12 @@ from kivy.graphics import Color, Ellipse, Line, Rectangle
 from kivy.graphics import PushMatrix, PopMatrix, Translate, Scale, Rotate
 from kivy.clock import Clock as kivyClock
 
+from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.stacklayout import StackLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+
 import numpy as np
 
 class SongData(object):
@@ -44,16 +50,27 @@ class BeatMatchDisplay(InstructionGroup):
         self.add(self.objects)
 
         self.gems = list()
-        for gem_meta in gem_data.timestamps:
-            self.gems.append(GemDisplay(*gem_meta))
-            self.objects.add(self.gems[-1])
+        self.gem_data = gem_data
+        self.latest_gem_idx = 0
 
         self.playing = False
+
+        self.time = 0
+        self.on_update(0)
 
     def toggle(self):
         self.playing = not self.playing
 
     def on_update(self, dt):
+        self.time += dt
+        if self.latest_gem_idx >= len(self.gem_data.timestamps):
+            return
+        gem_candidate = self.gem_data.timestamps[self.latest_gem_idx]
+        if gem_candidate[0] - self.time < 5:
+            self.gems.append(GemDisplay(self.time, *gem_candidate))
+            self.objects.add(self.gems[-1])
+            self.latest_gem_idx += 1
+
         if self.playing:
             self.objects.on_update()
 
@@ -93,9 +110,9 @@ class AudioController(object):
         self.audio.on_update()
 
             
-class MainWidget(BaseWidget) :
-    def __init__(self):
-        super(MainWidget, self).__init__()
+class Game(BaseWidget) :
+    def __init__(self, game_over_cb):
+        super(Game, self).__init__()
 
         self.objects = AnimGroup()
 
@@ -117,6 +134,9 @@ class MainWidget(BaseWidget) :
         self.playing = False
         self.gem_idx = 0
 
+        self.game_over_cb = game_over_cb
+        self.score = 0
+
         # debugging
         self.label = topleft_label()
         self.add_widget(self.label)
@@ -135,9 +155,6 @@ class MainWidget(BaseWidget) :
                self.gem_idx += 1
                self.audio_ctrl.set_mute(False)
 
-
-    def on_touch_up(self, touch):
-        pass
 
     def on_key_down(self, keycode, modifiers):
         # play / pause toggle
@@ -169,11 +186,80 @@ class MainWidget(BaseWidget) :
                 self.gem_idx += 1
                 self.audio_ctrl.set_mute(True)
 
-        self.player.look_at(Window.mouse_pos)
+            #for i in range(len(self.gems.gems)):
+            #    if np.linalg.norm(
+            #            self.gems.gems[i].pos - self.player.pos) < 100:
+            #        self.gems.gems[i].on_pass()
+            #        self.gems.gems.remove(i)
+            #        self.audio_ctrl.set_mute(True)
 
-        self.audio_ctrl.on_update()
-        self.objects.on_update()
-        self.camera.on_update(dt)
+            self.player.look_at(Window.mouse_pos)
+            self.audio_ctrl.on_update()
+            self.objects.on_update()
+            self.camera.on_update(dt)
 
+        #if self.time >= 5:
+        #    self.playing = False
+        #    self.game_over_cb(self.score)
+
+
+class Menu(BaseWidget):
+    def __init__(self, start_cb):
+        super(Menu, self).__init__()
+
+        self.start_btn = Button(
+                text="START",
+                color=(1.00, .996, .463, 0.7),
+                font_name="./fonts/SourceCodePro-Semibold.ttf",
+                font_size=60,
+                background_color=(.137, .047, .447, 1.0),
+                pos=(Window.width/2-200, Window.height/2-50),
+                size=(400, 100))
+        self.start_btn.bind(on_press=start_cb)
+        self.add_widget(self.start_btn)
+
+class ScoreScreen(BaseWidget):
+    def __init__(self, score, start_cb):
+        super(ScoreScreen, self).__init__()
+        self.label = Label(
+                text="GAME OVER\nFinal Score: {}".format(score),
+                color=(1.00, .996, .463, 0.7),
+                font_name="./fonts/SourceCodePro-Semibold.ttf",
+                font_size=36,
+                halign='center',
+                valign='center',
+                pos=(Window.width/2-50, Window.height/2+100))
+
+        self.start_btn = Button(
+                text="PLAY AGAIN",
+                color=(1.00, .996, .463, 0.7),
+                font_name="./fonts/SourceCodePro-Semibold.ttf",
+                font_size=60,
+                background_color=(.137, .047, .447, 1.0),
+                pos=(Window.width/2-200, Window.height/2-150),
+                size=(400, 100))
+        self.start_btn.bind(on_press=start_cb)
+
+        self.add_widget(self.label)
+        self.add_widget(self.start_btn)
+
+class MainWidget(BaseWidget):
+    def __init__(self):
+        super(MainWidget, self).__init__()
+        self.initialize()
+
+    def initialize(self):
+        self.state = Menu(self.start_game)
+        self.add_widget(self.state)
+
+    def start_game(self, inst):
+        self.remove_widget(self.state)
+        self.state = Game(self.game_over)
+        self.add_widget(self.state)
+
+    def game_over(self, score):
+        self.remove_widget(self.state)
+        self.state = ScoreScreen(score, self.start_game)
+        self.add_widget(self.state)
 
 run(MainWidget)
