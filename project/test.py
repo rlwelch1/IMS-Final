@@ -169,6 +169,13 @@ class MainWidget(BaseWidget) :
                 self.gem_idx += 1
                 self.audio_ctrl.set_mute(True)
 
+            #for i in range(len(self.gems.gems)):
+            #    if np.linalg.norm(
+            #            self.gems.gems[i].pos - self.player.pos) < 100:
+            #        self.gems.gems[i].on_pass()
+            #        self.gems.gems.remove(i)
+            #        self.audio_ctrl.set_mute(True)
+
         self.player.look_at(Window.mouse_pos)
 
         self.audio_ctrl.on_update()
