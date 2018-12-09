@@ -14,62 +14,71 @@ from noise import pnoise1
 
 class GemDisplay(InstructionGroup):
     BORDER = np.array((1., 1.))
-    def __init__(self, spawn_time, hit_time, pos, msize, anticipate_time):
+    def __init__(self, spawn_time, hit_time, pos, border_size, anticipate_len):
         super(GemDisplay, self).__init__()
         self.pos = pos
-        self.msize = np.array((msize, msize))
-        self.bsize = np.array((0.,0.))
+        self.border_size = np.array((border_size, border_size))
+        self.core_size = np.array((0.,0.))
 
         self.add(PushMatrix())
 
-        self.mcolor = Color(1,1,0,0.0)
-        self.add(self.mcolor)
+        self.border_color = Color(1,1,0,0.0)
+        self.add(self.border_color)
         self._pos = Translate(*self.pos)
         self.add(self._pos)
-        self.add(CEllipse(cpos=(0,0), csize=self.msize, segments=20))
-        self.tcolor = Color(0,0,0,0.0)
-        self.add(self.tcolor)
+        self.add(CEllipse(cpos=(0,0), csize=self.border_size, segments=20))
+        self.black_color = Color(0,0,0,0.0)
+        self.add(self.black_color)
         self.add(CEllipse(cpos=(0,0),
-            csize=self.msize-self.BORDER, segments=20))
-        self.bcolor = Color(1,1,0,0.3)
-        self.add(self.bcolor)
-        self.bcircle = CEllipse(cpos=(0,0), csize=self.bsize, segments=20)
-        self.add(self.bcircle)
+            csize=self.border_size-self.BORDER, segments=20))
+        self.core_color = Color(1,1,0,0.3)
+        self.add(self.core_color)
+        self.core_circle = CEllipse(cpos=(0,0), csize=self.core_size, segments=20)
+        self.add(self.core_circle)
 
         self.add(PopMatrix())
 
-        print(spawn_time)
-        print(hit_time)
         self.anim = KFAnim(
-            # time,                         radius,        b_alpha, m_alpha, 
-            (spawn_time,                    self.bsize[0], 1., 1.),
-            (hit_time-anticipate_time-0.01, self.bsize[0], 0.0, 0.),
-            (hit_time-anticipate_time,      self.bsize[0], 0.3, 1.),
-            (hit_time-0.01,                 self.msize[0], 0.3, 1.),
-            (hit_time,                      self.msize[0], 1, 1.),
-            (hit_time+0.5,                  self.msize[0], 1., 1.)
+            (0, self.core_size[0]),
+            (anticipate_len, self.border_size[0]-self.BORDER[0])
         )
+        self.spawn_time = spawn_time
         self.hit_time = hit_time
+        self.anticipate_len = anticipate_len
+        self.linger_len = 0.5
 
         self.time = spawn_time
-        self.on_update(self.time)
 
     def on_hit(self):
-        self.bcolor.rgb = (0,1,0)
+        self.core_color.rgb = (0,1,0)
 
     def on_pass(self):
-        self.bcolor.rgb = (1,0,0)
+        self.core_color.rgb = (1,0,0)
 
     def on_update(self, dt):
         self.time += dt
 
-        radius, b_alpha, m_alpha = self.anim.eval(self.time)
-        self.bcircle.csize = (radius, radius)
-        self.bcolor.a = b_alpha
-        self.mcolor.a = m_alpha
-        self.tcolor.a = m_alpha
+        anim_start = self.hit_time - self.anticipate_len
+        kill_time = self.hit_time + self.linger_len
+        kill = True
 
-        return self.anim.is_active(self.time)
+        if self.time < anim_start:
+            self.border_color.a = 0
+            self.black_color.a = 0
+            self.core_color.a = 0
+        elif self.time >= anim_start and self.time < self.hit_time:
+            radius = self.anim.eval(self.time-anim_start)
+            self.border_color.a = 0.3
+            self.black_color.a = 1.0
+            self.core_color.a = 0.3
+            self.core_circle.csize = (radius, radius)
+        elif self.time >= self.hit_time and self.time < kill_time:
+            self.core_color.a = 1
+            self.black_color.a = 1
+        else:
+            kill = False
+
+        return kill
 
 
 class PlayerDisplay(InstructionGroup):

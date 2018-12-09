@@ -21,58 +21,22 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 
 import numpy as np
+from collections import deque
 
-class SongData(object):
-    def __init__(self):
-        super(SongData, self).__init__()
-        self.timestamps = 0
-
-    def read_data(self, filepath):
-        w = np.array((Window.width, Window.height))
-        with open(filepath) as f:
-            lines = f.read().splitlines()
-            tokens = [l.split(" ") for l in lines]
-            self.timestamps = [
-                [
-                    float(t[0]),
-                    np.array((float(t[1].split(",")[0]),
-                        float(t[1].split(",")[1])))*w,
-                    float(t[2]),
-                    float(t[3])
-                ] for t in tokens
-            ]
-
-class BeatMatchDisplay(InstructionGroup):
-    def __init__(self, gem_data):
-        super(BeatMatchDisplay, self).__init__()
-
-        self.objects = AnimGroup()
-        self.add(self.objects)
-
-        self.gems = list()
-        self.gem_data = gem_data
-        self.latest_gem_idx = 0
-
-        self.playing = False
-
-        self.time = 0
-        self.on_update(0)
-
-    def toggle(self):
-        self.playing = not self.playing
-
-    def on_update(self, dt):
-        self.time += dt
-        if self.latest_gem_idx >= len(self.gem_data.timestamps):
-            return
-        gem_candidate = self.gem_data.timestamps[self.latest_gem_idx]
-        if gem_candidate[0] - self.time < 5:
-            self.gems.append(GemDisplay(self.time, *gem_candidate))
-            self.objects.add(self.gems[-1])
-            self.latest_gem_idx += 1
-
-        if self.playing:
-            self.objects.on_update()
+def parse_file(filepath):
+    w = np.array((Window.width, Window.height))
+    with open(filepath) as f:
+        lines = f.read().splitlines()
+        tokens = [l.split(" ") for l in lines]
+        return [
+            [
+                float(t[0]),                          # timestampe
+                np.array((float(t[1].split(",")[0]),
+                    float(t[1].split(",")[1])))*w,    # position
+                float(t[2]),                          # radius
+                float(t[3])                           # anticipation
+            ] for t in tokens
+        ]
 
 class AudioController(object):
     def __init__(self, song_path):
@@ -101,10 +65,6 @@ class AudioController(object):
         else:
             self.solo.set_gain(1.0)
 
-    # play a sound-fx (miss sound)
-    def play_sfx(self):
-        pass
-
     # needed to update audio
     def on_update(self):
         self.audio.on_update()
@@ -113,29 +73,32 @@ class AudioController(object):
 class Game(BaseWidget) :
     def __init__(self, game_over_cb):
         super(Game, self).__init__()
+        # AUDIO
+        AUDIO_PATH = ["./UptownFunkBG.wav", "./UptownFunkSolo.wav"]
+        self.audio_ctrl = AudioController(AUDIO_PATH)
 
+        # GRAPHICS
         self.objects = AnimGroup()
 
         self.player = PlayerDisplay()
         self.objects.add(self.player)
 
-        self.song_data = SongData()
-        self.song_data.read_data("./new.txt")
-        self.gems = BeatMatchDisplay(self.song_data)
-        self.objects.add(self.gems)
+        self.gem_data = deque(parse_file("./new.txt"))
+        self.rendered_gems = deque()
+
+        self.ray = None
 
         self.camera = Camera(self.objects)
         self.canvas.add(self.camera)
 
-        AUDIO_PATH = ["./UptownFunkBG.wav", "./UptownFunkSolo.wav"]
-        self.audio_ctrl = AudioController(AUDIO_PATH)
-
+        # GAME STATE
+        self.score = 0
         self.time = 0
         self.playing = False
-        self.gem_idx = 0
 
         self.game_over_cb = game_over_cb
-        self.score = 0
+        self.game_over_countdown = 5
+        self.game_done = False
 
         # debugging
         self.label = topleft_label()
@@ -146,22 +109,13 @@ class Game(BaseWidget) :
 
     def on_touch_down(self, touch):
         self.camera.add_trauma()
-        ray = self.player.shoot()
-
-        for gem in self.gems.gems:
-           d = dist_from_ray(*ray, gem.pos)
-           if d != False and d < 50. and abs(self.time-gem.hit_time) < 0.2:
-               gem.on_hit()
-               self.gem_idx += 1
-               self.audio_ctrl.set_mute(False)
-
+        self.ray = self.player.shoot()
 
     def on_key_down(self, keycode, modifiers):
         # play / pause toggle
         if keycode[1] == 'p':
-            self.audio_ctrl.toggle()
-            self.gems.toggle()
             self.toggle()
+            self.audio_ctrl.toggle()
 
         movement = lookup(keycode[1], 'wasd',
                 ((0.,1.), (-1.,0.), (0.,-1.), (1.,0.)))
@@ -175,32 +129,50 @@ class Game(BaseWidget) :
             self.player.add_lvel(np.array(movement))
 
     def on_update(self):
-        dt = kivyClock.frametime
-
         self.label.text = str(self.time)
+        if not self.playing:
+            return
 
-        if self.playing:
-            self.time += dt
-            if self.time > self.gems.gems[self.gem_idx].hit_time + 0.2:
-                self.gems.gems[self.gem_idx].on_pass()
-                self.gem_idx += 1
+        dt = kivyClock.frametime
+        self.time += dt
+
+        # Update game state
+        self.player.look_at(Window.mouse_pos)
+        self.camera.on_update(dt)
+        self.audio_ctrl.on_update()
+        self.objects.on_update()
+
+        # Check game over state
+        if self.game_done:
+            self.game_over_countdown -= dt
+            if self.game_over_countdown < 0:
+                self.game_over_cb(self.score)
+                return
+        elif len(self.gem_data) == 0 and len(self.rendered_gems) == 0:
+            self.game_done = True
+            return
+
+        # Render new gems
+        if len(self.gem_data) > 0 and self.gem_data[0][0] - self.time <= 5:
+            new_gem = GemDisplay(self.time, *self.gem_data.popleft())
+            self.rendered_gems.append(new_gem)
+            self.objects.add(new_gem)
+
+        # Check hit gems
+        if self.ray != None and len(self.rendered_gems) > 0:
+            d = dist_from_ray(*self.ray, self.rendered_gems[0].pos)
+            if d != False and d < 50. \
+                    and abs(self.time-self.rendered_gems[0].hit_time) < 0.2:
+                hit_gem = self.rendered_gems.popleft()
+                hit_gem.on_hit()
+                self.audio_ctrl.set_mute(False)
+
+        # Check passed gems
+        if len(self.rendered_gems) > 0:
+            if self.time - self.rendered_gems[0].hit_time > 0.2:
+                passed_gem = self.rendered_gems.popleft()
+                passed_gem.on_pass()
                 self.audio_ctrl.set_mute(True)
-
-            #for i in range(len(self.gems.gems)):
-            #    if np.linalg.norm(
-            #            self.gems.gems[i].pos - self.player.pos) < 100:
-            #        self.gems.gems[i].on_pass()
-            #        self.gems.gems.remove(i)
-            #        self.audio_ctrl.set_mute(True)
-
-            self.player.look_at(Window.mouse_pos)
-            self.audio_ctrl.on_update()
-            self.objects.on_update()
-            self.camera.on_update(dt)
-
-        #if self.time >= 5:
-        #    self.playing = False
-        #    self.game_over_cb(self.score)
 
 
 class Menu(BaseWidget):
