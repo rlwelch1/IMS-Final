@@ -4,6 +4,9 @@ import numpy as np
 def dir2angle(vec):
     return math.atan2(vec[1], vec[0]) * 180 / math.pi
 
+def angle2dir(angle):
+    return np.array((math.cos(angle), math.sin(angle)))
+
 def normalize(vec):
     norm = np.linalg.norm(vec)
     if norm == 0:

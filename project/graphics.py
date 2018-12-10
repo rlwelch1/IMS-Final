@@ -14,7 +14,15 @@ from noise import pnoise1
 
 class GemDisplay(InstructionGroup):
     BORDER = np.array((1., 1.))
-    def __init__(self, spawn_time, hit_time, pos, border_size, anticipate_len):
+    COLOR_LIST = [
+        (.957, .133, .192),
+        (.98, .494, .133),
+        (.98, .686, .133),
+        (.651, .914, .125),
+        (.157, .282, .663),
+        (.306, .157, .675)
+    ]
+    def __init__(self, spawn_time, hit_time, kill_time, pos, border_size, anticipate_len, color_idx):
         super(GemDisplay, self).__init__()
         self.pos = pos
         self.border_size = np.array((border_size, border_size))
@@ -22,7 +30,7 @@ class GemDisplay(InstructionGroup):
 
         self.add(PushMatrix())
 
-        self.border_color = Color(1,1,0,0.0)
+        self.border_color = Color(*self.COLOR_LIST[color_idx],0.0)
         self.add(self.border_color)
         self._pos = Translate(*self.pos)
         self.add(self._pos)
@@ -31,7 +39,7 @@ class GemDisplay(InstructionGroup):
         self.add(self.black_color)
         self.add(CEllipse(cpos=(0,0),
             csize=self.border_size-self.BORDER, segments=20))
-        self.core_color = Color(1,1,0,0.3)
+        self.core_color = Color(*self.COLOR_LIST[color_idx],0.3)
         self.add(self.core_color)
         self.core_circle = CEllipse(cpos=(0,0), csize=self.core_size, segments=20)
         self.add(self.core_circle)
@@ -43,23 +51,22 @@ class GemDisplay(InstructionGroup):
             (anticipate_len, self.border_size[0]-self.BORDER[0])
         )
         self.spawn_time = spawn_time
-        self.hit_time = hit_time
         self.anticipate_len = anticipate_len
-        self.linger_len = 0.5
+        self.hit_time = hit_time
+        self.kill_time = kill_time
 
         self.time = spawn_time
 
     def on_hit(self):
-        self.core_color.rgb = (0,1,0)
+        self.core_color.rgb = (1,1,1)
 
     def on_pass(self):
-        self.core_color.rgb = (1,0,0)
+        self.core_color.rgb = (0.4,0.4,0.4)
 
     def on_update(self, dt):
         self.time += dt
 
         anim_start = self.hit_time - self.anticipate_len
-        kill_time = self.hit_time + self.linger_len
         kill = True
 
         if self.time < anim_start:
@@ -72,7 +79,7 @@ class GemDisplay(InstructionGroup):
             self.black_color.a = 1.0
             self.core_color.a = 0.3
             self.core_circle.csize = (radius, radius)
-        elif self.time >= self.hit_time and self.time < kill_time:
+        elif self.time >= self.hit_time and self.time < self.kill_time:
             self.core_color.a = 1
             self.black_color.a = 1
         else:
@@ -82,10 +89,11 @@ class GemDisplay(InstructionGroup):
 
 
 class PlayerDisplay(InstructionGroup):
-    VEL_MAX = 500.
     def __init__(self):
         super(PlayerDisplay, self).__init__()
-        self.size = np.array((50., 50.))
+        self.VEL_MAX = 500.
+
+        self.size = np.array((50., 40.))
         self.pos = np.array((0., 0.))
         self.dir = np.array((0., 0.))
         self.lvel = np.array((0., 0.))
@@ -105,7 +113,11 @@ class PlayerDisplay(InstructionGroup):
 
         self.add(PopMatrix())
 
-        self.addons = list()
+        self.laser = None
+        self.shooting = False
+
+        self.explosions = AnimGroup()
+        self.add(self.explosions)
 
         self.pos = np.array((Window.width/2, Window.height/2))
         self.time = 0
@@ -119,26 +131,43 @@ class PlayerDisplay(InstructionGroup):
         self.lvel += normalize(vel_dir) * self.VEL_MAX
 
     def shoot(self):
-        self.addons.append(ExplosionDisplay(self.pos))
-        self.add(self.addons[-1])
-        self.addons.append(LaserDisplay(self.pos,self.dir))
-        self.add(self.addons[-1])
+        if not self.shooting:
+            self.shooting = True
+            assert(self.laser == None)
+            self.laser = LaserDisplay(self.pos, self.dir)
+            self.add(self.laser)
+            self.explosions.add(ExplosionDisplay(self.pos))
+        return
 
-        return(self.pos, self.dir)
+    def release(self):
+        if self.shooting:
+            self.shooting = False
+            assert(self.laser != None)
+            self.remove(self.laser)
+            self.laser = None
+        return
 
     def on_update(self, dt):
         self.time += dt
 
-        for addon in self.addons:
-            addon.on_update(dt)
+        # set laser direction
+        if self.laser != None:
+            self.laser.pos = self.pos
+            self.laser._pos.x, self.laser._pos.y = self.pos
+            self.laser.angle = dir2angle(self.dir)
+            self.laser._rot.angle = self.laser.angle
+
+        self.explosions.on_update()
 
         # update velocity
         self.vel_target = self.lvel
         self.vel += (self.vel_target - self.vel) * 0.999 * dt 
-        # update possition
+
+        # update position
         self.pos = np.clip(self.pos+self.vel*dt, self.size/2,
                 np.array((Window.width, Window.height))-self.size/2)
         self._pos.x, self._pos.y = self.pos
+
         return True
 
 class Camera(InstructionGroup):
@@ -163,7 +192,7 @@ class Camera(InstructionGroup):
         self.seed = [random.randint(0, 256) for _ in range(3)]
 
         self.time = 0
-        self.on_update(self.time)
+        self.on_update(0)
 
     def add_trauma(self):
         self.trauma = max(1, self.trauma + self.TRAUMA_INCR)
@@ -201,11 +230,11 @@ class ExplosionDisplay(InstructionGroup):
                 # time, radius, alpha
                 (0, 80,  1),
                 (.03, 120,  1),
-                (.2, 120, 1),
-                (.23, 120, 0))
+                (.4, 120, 1),
+                (.43, 120, 0))
 
         self.time = 0
-        self.on_update(self.time)
+        self.on_update(0)
 
     def on_update(self, dt):
         self.time += dt
@@ -221,34 +250,24 @@ class LaserDisplay(InstructionGroup):
     def __init__(self, start, vec):
         super(LaserDisplay, self).__init__()
 
-        pos = start
-        angle = dir2angle(vec)
+        self.pos = start
+        self.angle = dir2angle(vec)
 
         self.add(PushMatrix())
         self.color = Color(1,1,1)
         self.add(self.color)
-        self.add(Translate(*pos))
-        self.add(Rotate(angle=angle))
+        self._pos = Translate(*self.pos)
+        self.add(self._pos)
+        self._rot = Rotate(angle=self.angle)
+        self.add(self._rot)
         self.rect = Rectangle(pos=(0,0), size=(0,0))
         self.add(self.rect)
         self.add(PopMatrix())
 
-        self.anim = KFAnim(
-                # time, width, length, alpha
-                (0, 100, 0, 1),
-                (.03, 100, 1000, 1),
-                (.2, 100, 1000., 1),
-                (.23, 100, 1000, 0))
+        self.rect.size = (1000, 100)
+        self.rect.pos = (0, -50)
 
-        self.time = 0
-        self.on_update(self.time)
+        self.on_update(0)
 
     def on_update(self, dt):
-        self.time += dt
-
-        width, length, alpha = self.anim.eval(self.time)
-        self.rect.size = (length, width)
-        self.rect.pos = (0, -width/2)
-        self.color.a = alpha
-
-        return self.anim.is_active(self.time)
+        return True
