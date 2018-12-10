@@ -64,8 +64,10 @@ class AudioController(object):
     def set_mute(self, mute):
         if mute:
             self.solo.set_gain(0.0)
+            self.bg.set_gain(0.6)
         else:
             self.solo.set_gain(1.0)
+            self.bg.set_gain(0.0)
 
     # needed to update audio
     def on_update(self):
@@ -78,7 +80,7 @@ class Game(BaseWidget) :
         # AUDIO
         self.audio = Audio(2)
         self.mixer = Mixer()
-        AUDIO_PATH = ["./AloneFiltered.wav", "./AloneStandard.wav"]
+        AUDIO_PATH = ["./AloneFilteredv3.wav", "./AloneStandard.wav"]
         self.audio_ctrl = AudioController(self.audio, self.mixer, AUDIO_PATH)
 
         # GRAPHICS
@@ -87,7 +89,7 @@ class Game(BaseWidget) :
         self.player = PlayerDisplay()
         self.objects.add(self.player)
 
-        self.gem_data = deque(parse_file("./LevelDebug.txt"))
+        self.gem_data = deque(parse_file("./LevelFinal.txt"))
         self.rendered_gems = deque()
 
         self.camera = Camera(self.objects)
@@ -99,6 +101,8 @@ class Game(BaseWidget) :
         self.time = 0.0
         self.playing = False
         self.healthbar = 10.0
+        self.healthbar_sprite = HealthBar()
+        self.objects.add(self.healthbar_sprite)
 
         self.game_over_cb = game_over_cb
         self.game_over_countdown = 5
@@ -138,7 +142,7 @@ class Game(BaseWidget) :
     def on_key_down(self, keycode, modifiers):
         if self.game_done: # disable player controls if game over
             return
-
+        
         # play / pause toggle
         if keycode[1] == 'p':
             self.first = False
@@ -158,6 +162,24 @@ class Game(BaseWidget) :
                 ((0.,-1.), (1.,0.), (0.,1.), (-1.,0.)))
         if movement is not None:
             self.player.add_lvel(np.array(movement))
+            
+    def apply_bullet_damage(self):
+        self.healthbar = max(self.healthbar-1, 0)
+        self.healthbar_sprite.set_health(self.healthbar)
+        
+    def spawn_bullets(self, pos):
+        bul_speed = 50
+        bullets = []
+        for vel in [(bul_speed,bul_speed),(bul_speed,-bul_speed),(-bul_speed,-bul_speed),(-bul_speed,bul_speed)]:
+            bullet = Bullet(pos, self.player_collision_check, self.apply_bullet_damage, vel)
+            bullets.append(bullet)
+            
+        for bullet in bullets:
+            self.objects.add(bullet)
+            
+    def player_collision_check(self, bullet_pos):
+        x, y = self.player.get_pos()
+        return (abs(bullet_pos[0] - x) < 20 and abs(bullet_pos[1] - y) < 20)
 
     def on_update(self):
         self.label.text = "Time: {:.1f}\nHealth: {}".format(
@@ -176,11 +198,12 @@ class Game(BaseWidget) :
 
         # Check laser usage
         if self.player.shooting:
-            self.healthbar -= dt
+            self.healthbar -= dt * 5
+            self.healthbar_sprite.set_health(self.healthbar)
 
         # Render new gems
         if len(self.gem_data) > 0 and self.gem_data[0][0] - self.time <= 5:
-            new_gem = GemDisplay(self.time, *self.gem_data.popleft())
+            new_gem = GemDisplay(self.time, *self.gem_data.popleft(), self.spawn_bullets)
             self.rendered_gems.append(new_gem)
             self.objects.add(new_gem)
 
@@ -194,6 +217,7 @@ class Game(BaseWidget) :
                 hit_gem.on_hit()
                 self.audio_ctrl.set_mute(False)
                 self.healthbar = min(self.healthbar+1, 10)
+                self.healthbar_sprite.set_health(self.healthbar)
                 self.score += 50 * self._get_multiplier()
                 self.combo += 1
 
@@ -203,7 +227,8 @@ class Game(BaseWidget) :
                 passed_gem = self.rendered_gems.popleft()
                 passed_gem.on_pass()
                 self.audio_ctrl.set_mute(True)
-                self.healthbar = max(self.healthbar-1, 0)
+                self.healthbar = max(self.healthbar-0.5, 0)
+                self.healthbar_sprite.set_health(self.healthbar)
                 self.combo = 0
 
         # Check initiate game over

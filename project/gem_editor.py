@@ -111,6 +111,7 @@ def make_wave_buffers(regions_path, wave_path):
     
     return buffers
 
+
 # gem class to keep track of positional data of gems in editor interface
 class Gem(InstructionGroup):
     # colors of gems
@@ -188,7 +189,7 @@ class MainWidget(BaseWidget):
         self.audio.set_generator(self.mixer)
         
         # waveBuffer setup to create music segments that gems will encapsulate
-        self.wave_buffer = make_wave_buffers("./TestAnnotation.txt", "./AloneStandard.wav")
+        self.wave_buffer = make_wave_buffers("./AloneAnnotation.txt", "./AloneStandard.wav")
         self.current_wave_buffer = 0
         # play the first segment of music in the editor, but do not record a gem for it
         self.mixer.add(WaveGenerator(self.wave_buffer[self.current_wave_buffer]))
@@ -332,19 +333,11 @@ class MainWidget(BaseWidget):
             
     def update_info_label(self):
         color_names = ["red", "orange", "yellow", "green", "blue", "purple"]
-        sizes = ["50", "75", "30"]
-        self.info.text = color_names[self.color] + ' ' + sizes[self.gem_size]
+        sizes = Gem.SIZES
+        self.info.text = color_names[self.color] + ' ' + str(sizes[self.gem_size])
         if self.completion_text:
             self.info.text = 'press enter if done, or backspace to continue editing'
 
 
-
-# TODO:
-"""
-1. annotate the soundtrack of AloneStandard in SonicVisualizer to segment gems
-2. check if editor works with annotated .txt file and wave buffers
-3. implement export_data functionality to create a .txt file to be used for the game with (timestamp xpos,ypos gemRadius gemDelay)
-4. use editor to create level for AloneStandard
-"""
 
 run(MainWidget)

@@ -12,29 +12,118 @@ import random
 import numpy as np
 from noise import pnoise1
 
+class Bullet(InstructionGroup):
+    def __init__(self, pos, collision_check_callback, damage_player_callback, velocity, color=(1,1,1)):
+        super(Bullet, self).__init__()
+
+        self.color = Color(*color)
+        self.add(self.color)
+        
+        self.collision_check = collision_check_callback
+        self.damage_player = damage_player_callback
+
+        self.velocity = velocity
+        
+        self.pos = pos
+        
+        self.add(PushMatrix())
+        
+        self._pos = Translate(*self.pos)
+        self.add(self._pos)
+        self.circle = CEllipse(cpos = (0.,0.), size = (10, 10), segments = 10)
+        self.add(self.circle)
+        
+        self.add(PopMatrix())
+
+        self.time = 0
+        self.lifetime = 5
+        self.dead = False
+        
+    # cause the bullet to get destroyed upon a collision
+    def kill(self):
+        self.dead = True
+        
+    def on_update(self, dt):
+        # advance time
+        self.time += dt
+        
+        # update position of bullet based on velocity
+        cur_pos = self.pos
+        x, y = cur_pos
+        new_x = x + (self.velocity[0] * dt)
+        new_y = y + (self.velocity[1] * dt)
+        self.pos = (new_x, new_y)
+        self._pos.x, self._pos.y = self.pos
+        self.circle.set_cpos((0,0))
+        
+        # check for collision with player with callback
+        if self.collision_check(self.pos):
+            self.damage_player()        
+            self.kill()
+        
+        # destroy bullet if lifetime is up
+        if self.time > self.lifetime:
+            self.kill()
+
+        # destroy bullet if the bullet hits enemy
+        return not self.dead
+    
+# healthbar class
+class HealthBar(InstructionGroup):
+    def __init__(self):
+        super(HealthBar, self).__init__()
+        
+        self.color = Color(0,1,0.1)
+        
+        self.pos = (175,550)
+        
+        self.add(PushMatrix())
+        self.add(Translate(*self.pos))
+        self.add(Color(0.4,0.4,0.4))
+        self.add(Rectangle(pos=(0,0), size=(450,25)))
+        self.add(self.color)
+        self.rect = Rectangle(pos=(0,0), size=(450,25))
+        self.add(self.rect)
+        self.add(Color(1,1,1))
+        self.add(PopMatrix())
+        
+    def set_health(self, health):
+        h = np.clip(health, 0.00001, 10)
+        h_percent = float(h)/10.
+        r, g, b = np.clip(1/h_percent-0.5,0,1), np.clip(h_percent+0.25,0,1), 0.1
+        self.color.rgb = (r,g,b)
+        self.rect.size = (450 * h_percent, 25)
+        
+    def on_update(self, dt):
+        return True
+
 class GemDisplay(InstructionGroup):
     BORDER = np.array((1., 1.))
     COLOR_LIST = [
-        (.957, .133, .192),
-        (.98, .494, .133),
-        (.98, .686, .133),
-        (.651, .914, .125),
-        (.157, .282, .663),
-        (.306, .157, .675)
+        (1, 0, 0),
+        (1, .65, 0),
+        (1, 1, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+        (1, 0, 1)
     ]
-    def __init__(self, spawn_time, hit_time, kill_time, pos, border_size, anticipate_len, color_idx):
+    def __init__(self, spawn_time, hit_time, kill_time, pos, border_size, anticipate_len, color_idx, produce_bullets_callback):
         super(GemDisplay, self).__init__()
         self.pos = pos
         self.border_size = np.array((border_size, border_size))
         self.core_size = np.array((0.,0.))
+        
+        self.produce_bullets = produce_bullets_callback
 
         self.add(PushMatrix())
+        self.color = color_idx
 
         self.border_color = Color(*self.COLOR_LIST[color_idx],0.0)
         self.add(self.border_color)
         self._pos = Translate(*self.pos)
         self.add(self._pos)
-        self.add(CEllipse(cpos=(0,0), csize=self.border_size, segments=20))
+        self.border_circle = CEllipse(cpos=(0,0), csize=self.border_size, segments=20)
+        self.add(self.border_circle)
         self.black_color = Color(0,0,0,0.0)
         self.add(self.black_color)
         self.add(CEllipse(cpos=(0,0),
@@ -54,14 +143,21 @@ class GemDisplay(InstructionGroup):
         self.anticipate_len = anticipate_len
         self.hit_time = hit_time
         self.kill_time = kill_time
+        self.miss = True
 
         self.time = spawn_time
 
     def on_hit(self):
-        self.core_color.rgb = (1,1,1)
+        self.core_color.rgb = self.COLOR_LIST[self.color]
+        self.miss = False
 
     def on_pass(self):
         self.core_color.rgb = (0.4,0.4,0.4)
+        self.miss = True
+        
+    def spawn_bullets(self):
+        # use callback to game control script
+        self.produce_bullets(self.pos)
 
     def on_update(self, dt):
         self.time += dt
@@ -76,14 +172,25 @@ class GemDisplay(InstructionGroup):
         elif self.time >= anim_start and self.time < self.hit_time:
             radius = self.anim.eval(self.time-anim_start)
             self.border_color.a = 0.3
-            self.black_color.a = 1.0
-            self.core_color.a = 0.3
+            self.black_color.a = 0.7
+            self.core_color.a = (self.time - anim_start)/self.anticipate_len
             self.core_circle.csize = (radius, radius)
         elif self.time >= self.hit_time and self.time < self.kill_time:
             self.core_color.a = 1
             self.black_color.a = 1
+            if not self.miss:
+                self.border_color.rgb = (0.1,1,0.1)
+                self.border_color.a = np.clip(1-(self.time - self.hit_time)**0.5,0,1)
+                self.border_circle.set_csize(self.border_size + np.clip(50*(1-(self.time - self.hit_time)**2),0,50))
+            else:
+                self.border_color.rgb = (1,0,0)
+                self.border_color.a = np.clip(1-(self.time - self.hit_time)**0.5,0,1)
+                self.border_circle.set_csize(self.border_size + np.clip(50*(1/(self.time - self.hit_time)**2),0,50))
         else:
             kill = False
+        
+        if not kill:
+            self.spawn_bullets()
 
         return kill
 
@@ -122,6 +229,9 @@ class PlayerDisplay(InstructionGroup):
         self.pos = np.array((Window.width/2, Window.height/2))
         self.time = 0
         self.on_update(0)
+        
+    def get_pos(self):
+        return (self.pos[0],self.pos[1])
 
     def look_at(self, pos):
         self.dir = normalize(pos - self.pos)
